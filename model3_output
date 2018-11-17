@@ -1,0 +1,231 @@
+Python 3.6.5 |Anaconda custom (64-bit)| (default, Mar 29 2018, 13:14:23)
+Type "copyright", "credits" or "license" for more information.
+
+IPython 6.5.0 -- An enhanced Interactive Python.
+
+
+
+
+
+"""
+Spyder Editor
+
+This is a temporary script file.
+"""
+
+'''
+Read reviews from a JSON-formatted file into an array.
+'''
+import json
+import string
+import re
+import keras
+import numpy as np
+from keras.preprocessing.text import Tokenizer
+import matplotlib.pyplot as plt
+from keras.preprocessing.sequence import pad_sequences
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
+from keras.layers import Embedding
+from keras.layers import LSTM
+from keras.optimizers import SGD, Adam
+from sklearn.metrics import accuracy_score
+
+lines = [];
+num_pos = 0;
+num_neg = 0;
+num_total = 75000;
+
+with open('/Users/edgarleung/Downloads/yelp_dataset/yelp_academic_dataset_review.json', 'r') as f:
+    for line in f:
+        if (len(lines) >= (num_total * 2)):
+            break;
+        
+        json_info = json.loads(line);
+        
+        if json_info['stars'] > 3:
+            if num_pos > num_total:
+                continue;
+            num_pos = num_pos + 1;
+        elif json_info['stars'] < 3:
+            if num_neg > num_total:
+                continue;
+            num_neg = num_neg + 1;
+        else:
+            continue;
+        
+        lines.append(json.loads(line));
+
+
+'''
+Separate line data into reviews and labels
+'''
+reviews = [line['text'] for line in lines];
+
+stars = [line['stars'] for line in lines];
+labels = ['1' if star > 3 else '0' for star in stars];
+
+'''
+Clean each document by removing unnecesary characters and splitting by space.
+'''
+
+
+def clean_document(doco):
+    punctuation = string.punctuation + '\n\n';
+    punc_replace = ''.join([' ' for s in punctuation]);
+    doco_clean = doco.replace('-', ' ');
+    doco_alphas = re.sub(r'\W +', '', doco_clean)
+    trans_table = str.maketrans(punctuation, punc_replace);
+    doco_clean = ' '.join([word.translate(trans_table) for word in doco_alphas.split(' ')]);
+    doco_clean = doco_clean.split(' ');
+    doco_clean = [word.lower() for word in doco_clean if len(word) > 0];
+    
+    return doco_clean;
+
+
+
+# Generate a cleaned reviews array from original review texts
+review_cleans = [clean_document(doc) for doc in reviews];
+sentences = [' '.join(r) for r in review_cleans]
+
+# Use a Keras Tokenizer and fit on the sentences
+
+tokenizer = Tokenizer();
+tokenizer.fit_on_texts(sentences);
+text_sequences = np.array(tokenizer.texts_to_sequences(sentences));
+sequence_dict = tokenizer.word_index;
+word_dict = dict((num, val) for (val, num) in sequence_dict.items());
+
+# We get a map of encoding-to-word in sequence_dict
+
+# Generate encoded reviews
+reviews_encoded = [];
+for i, review in enumerate(review_cleans):
+    reviews_encoded.append([sequence_dict[x] for x in review]);
+
+
+# Plot a Histogram of length of reviews
+lengths = [len(x) for x in reviews_encoded];
+with plt.xkcd():
+    plt.hist(lengths, bins=range(100))
+
+
+
+
+embeddings_index = dict();
+with open('/Users/edgarleung/Downloads/glove.6B/glove.6B.100d.txt') as f:
+    for line in f:
+        values = line.split();
+        word = values[0];
+        coefs = np.asarray(values[1:], dtype='float32');
+        embeddings_index[word] = coefs;
+
+
+vocab_size = len(sequence_dict)+1;
+embeddings_matrix = np.zeros((vocab_size, 100));
+for word, i in sequence_dict.items():
+    embedding_vector = embeddings_index.get(word);
+    if embedding_vector is not None:
+        embeddings_matrix[i] = embedding_vector;
+
+
+
+
+
+# Truncate and Pad reviews at a Maximum cap of 60 words.
+max_cap = 100;
+X = pad_sequences(reviews_encoded, maxlen=max_cap, truncating='post')
+
+# Obtain a One-hot Y array for each review label.
+Y = np.array([[0,1] if '0' in label else [1,0] for label in labels])
+
+# Get a randomized sequence of positions to shuffle reviews
+np.random.seed(1024);
+random_posits = np.arange(len(X))
+np.random.shuffle(random_posits);
+
+# Shuffle X and Y
+X = X[random_posits];
+Y = Y[random_posits];
+
+# Divide the reviews into Training, Dev, and Test data.
+train_cap = int(0.85 * len(X));
+dev_cap = int(0.93 * len(X));
+
+X_train, Y_train = X[:train_cap], Y[:train_cap];
+X_dev, Y_dev = X[train_cap:dev_cap], Y[train_cap:dev_cap];
+X_test, Y_test = X[dev_cap:], Y[dev_cap:]
+
+
+model = Sequential();
+model.add(Embedding(len(word_dict)+1, max_cap, input_length=max_cap, weights=[embeddings_matrix], trainable=False));
+model.add(LSTM(60, return_sequences=True, recurrent_dropout=0.5));
+model.add(Dropout(0.5))
+model.add(LSTM(60, recurrent_dropout=0.5));
+model.add(Dense(60, activation='relu'));
+model.add(Dense(2, activation='softmax'));
+print(model.summary());
+
+optimizer = Adam(lr=0.01, decay=0.001);
+model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+# fit model
+model.fit(X_train, Y_train, batch_size=64, epochs=10, validation_data=(X_dev, Y_dev))
+
+
+
+
+# Obtain predictions
+predictions = model.predict_classes(X_test)
+
+# Convert Y_test to the same format as predictions
+actuals = [0 if y[0] == 1 else 1 for y in Y_test];
+
+# Use SkLearn's Metrics module
+accuracy_score(predictions, actuals)
+Using TensorFlow backend.
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+embedding_1 (Embedding)      (None, 100, 100)          61006300  
+_________________________________________________________________
+lstm_1 (LSTM)                (None, 100, 60)           38640     
+_________________________________________________________________
+dropout_1 (Dropout)          (None, 100, 60)           0         
+_________________________________________________________________
+lstm_2 (LSTM)                (None, 60)                29040     
+_________________________________________________________________
+dense_1 (Dense)              (None, 60)                3660      
+_________________________________________________________________
+dense_2 (Dense)              (None, 2)                 122       
+=================================================================
+Total params: 61,077,762
+Trainable params: 71,462
+Non-trainable params: 61,006,300
+_________________________________________________________________
+None
+Train on 127500 samples, validate on 12000 samples
+Epoch 1/10
+127500/127500 [==============================] - 508s 4ms/step - loss: 0.3513 - acc: 0.8462 - val_loss: 0.2727 - val_acc: 0.8821
+Epoch 2/10
+127500/127500 [==============================] - 506s 4ms/step - loss: 0.2737 - acc: 0.8856 - val_loss: 0.2518 - val_acc: 0.8918
+Epoch 3/10
+127500/127500 [==============================] - 503s 4ms/step - loss: 0.2512 - acc: 0.8958 - val_loss: 0.2358 - val_acc: 0.9008
+Epoch 4/10
+127500/127500 [==============================] - 497s 4ms/step - loss: 0.2393 - acc: 0.9009 - val_loss: 0.2310 - val_acc: 0.9018
+Epoch 5/10
+127500/127500 [==============================] - 492s 4ms/step - loss: 0.2298 - acc: 0.9044 - val_loss: 0.2220 - val_acc: 0.9060
+Epoch 6/10
+127500/127500 [==============================] - 571s 4ms/step - loss: 0.2224 - acc: 0.9080 - val_loss: 0.2266 - val_acc: 0.9047....] - ETA: 4:05 - loss: 0.2206 - acc: 0.9087
+Epoch 7/10
+127500/127500 [==============================] - 690s 5ms/step - loss: 0.2163 - acc: 0.9106 - val_loss: 0.2141 - val_acc: 0.9110
+Epoch 8/10
+127500/127500 [==============================] - 492s 4ms/step - loss: 0.2124 - acc: 0.9124 - val_loss: 0.2101 - val_acc: 0.9125
+Epoch 9/10
+127500/127500 [==============================] - 493s 4ms/step - loss: 0.2101 - acc: 0.9129 - val_loss: 0.2124 - val_acc: 0.9115
+Epoch 10/10
+127500/127500 [==============================] - 664s 5ms/step - loss: 0.2065 - acc: 0.9147 - val_loss: 0.2092 - val_acc: 0.9117
+Out[1]: 0.9180952380952381
+￼
+
+accuracy_score(predictions, actuals)
+Out[2]: 0.9180952380952381
