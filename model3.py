@@ -21,6 +21,7 @@ from keras.layers import Dense, Dropout
 from keras.layers import Embedding
 from keras.layers import LSTM
 from keras.optimizers import SGD, Adam
+from sklearn.metrics import accuracy_score
 
 lines = [];
 num_pos = 0;
@@ -99,8 +100,26 @@ with plt.xkcd():
 
 
 
+embeddings_index = dict();
+with open('/Users/edgarleung/Downloads/glove.6B/glove.6B.100d.txt') as f:
+    for line in f:
+        values = line.split();
+        word = values[0];
+        coefs = np.asarray(values[1:], dtype='float32');
+        embeddings_index[word] = coefs;
+
+vocab_size = len(sequence_dict)+1;
+embeddings_matrix = np.zeros((vocab_size, 100));
+for word, i in sequence_dict.items():
+    embedding_vector = embeddings_index.get(word);
+    if embedding_vector is not None:
+        embeddings_matrix[i] = embedding_vector;
+
+
+
+
 # Truncate and Pad reviews at a Maximum cap of 60 words.
-max_cap = 60;
+max_cap = 100;
 X = pad_sequences(reviews_encoded, maxlen=max_cap, truncating='post')
 
 # Obtain a One-hot Y array for each review label.
@@ -124,57 +143,8 @@ X_dev, Y_dev = X[train_cap:dev_cap], Y[train_cap:dev_cap];
 X_test, Y_test = X[dev_cap:], Y[dev_cap:]
 
 
-
 model = Sequential();
-model.add(Embedding(len(word_dict)+1, max_cap, input_length=max_cap));
-model.add(LSTM(100, return_sequences=True));
-model.add(LSTM(100));
-model.add(Dense(100, activation='relu'));
-model.add(Dense(2, activation='softmax'));
-print(model.summary());
-
-optimizer = Adam(lr=0.001, decay=0.0001);
-model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-# fit model
-model.fit(X_train, Y_train, batch_size=128, epochs=10, validation_data=(X_dev, Y_dev))
-
-
-
-
-model = Sequential();
-model.add(Embedding(len(word_dict), max_cap, input_length=max_cap));
-model.add(LSTM(60, return_sequences=True, recurrent_dropout=0.5));
-model.add(Dropout(0.5))
-model.add(LSTM(60, recurrent_dropout=0.5));
-model.add(Dense(60, activation='relu'));
-model.add(Dense(2, activation='softmax'));
-print(model.summary());
-
-optimizer = Adam(lr=0.01, decay=0.001);
-model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
-# fit model
-model.fit(X_train, Y_train, batch_size=64, epochs=10, validation_data=(X_dev, Y_dev))
-
-embeddings_index = dict();
-with open('data/glove.6B.100d.txt') as f:
-    for line in f:
-        values = line.split();
-        word = values[0];
-        coefs = np.asarray(values[1:], dtype='float32');
-        embeddings_index[word] = coefs;
-
-vocab_size = len(sequence_dict);
-embeddings_matrix = np.zeros((vocab_size, 100));
-for word, i in sequence_dict.items():
-    embedding_vector = embeddings_index.get(word);
-    if embedding_vector is not None:
-        embeddings_matrix[i] = embedding_vector;
-
-max_cap = 100;
-# Re-generate reviews_encoded, X, and Y after changing max_cap
-
-model = Sequential();
-model.add(Embedding(len(word_dict), max_cap, input_length=max_cap, weights=[embeddings_matrix], trainable=False));
+model.add(Embedding(len(word_dict)+1, max_cap, input_length=max_cap, weights=[embeddings_matrix], trainable=False));
 model.add(LSTM(60, return_sequences=True, recurrent_dropout=0.5));
 model.add(Dropout(0.5))
 model.add(LSTM(60, recurrent_dropout=0.5));
