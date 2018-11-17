@@ -1,0 +1,199 @@
+Python 3.6.5 |Anaconda custom (64-bit)| (default, Mar 29 2018, 13:14:23)
+Type "copyright", "credits" or "license" for more information.
+
+IPython 6.5.0 -- An enhanced Interactive Python.
+
+"""
+Spyder Editor
+
+This is a temporary script file.
+"""
+
+'''
+Read reviews from a JSON-formatted file into an array.
+'''
+import json
+import string
+import re
+import keras
+import numpy as np
+from keras.preprocessing.text import Tokenizer
+import matplotlib.pyplot as plt
+from keras.preprocessing.sequence import pad_sequences
+from keras.models import Sequential
+from keras.layers import Dense, Dropout
+from keras.layers import Embedding
+from keras.layers import LSTM
+from keras.optimizers import SGD, Adam
+
+lines = [];
+num_pos = 0;
+num_neg = 0;
+num_total = 75000;
+Using TensorFlow backend.
+
+with open('/Users/edgarleung/Downloads/yelp_dataset/yelp_academic_dataset_review.json', 'r') as f:
+    for line in f:
+        if (len(lines) >= (num_total * 2)):
+            break;
+        
+        json_info = json.loads(line);
+        
+        if json_info['stars'] > 3:
+            if num_pos > num_total:
+                continue;
+            num_pos = num_pos + 1;
+        elif json_info['stars'] < 3:
+            if num_neg > num_total:
+                continue;
+            num_neg = num_neg + 1;
+        else:
+            continue;
+        
+        lines.append(json.loads(line));
+
+
+'''
+Separate line data into reviews and labels
+'''
+reviews = [line['text'] for line in lines];
+
+stars = [line['stars'] for line in lines];
+labels = ['1' if star > 3 else '0' for star in stars];
+
+'''
+Clean each document by removing unnecesary characters and splitting by space.
+'''
+
+
+def clean_document(doco):
+    punctuation = string.punctuation + '\n\n';
+    punc_replace = ''.join([' ' for s in punctuation]);
+    doco_clean = doco.replace('-', ' ');
+    doco_alphas = re.sub(r'\W +', '', doco_clean)
+    trans_table = str.maketrans(punctuation, punc_replace);
+    doco_clean = ' '.join([word.translate(trans_table) for word in doco_alphas.split(' ')]);
+    doco_clean = doco_clean.split(' ');
+    doco_clean = [word.lower() for word in doco_clean if len(word) > 0];
+    
+    return doco_clean;
+
+
+
+# Generate a cleaned reviews array from original review texts
+review_cleans = [clean_document(doc) for doc in reviews];
+sentences = [' '.join(r) for r in review_cleans]
+
+# Use a Keras Tokenizer and fit on the sentences
+
+tokenizer = Tokenizer();
+tokenizer.fit_on_texts(sentences);
+text_sequences = np.array(tokenizer.texts_to_sequences(sentences));
+sequence_dict = tokenizer.word_index;
+word_dict = dict((num, val) for (val, num) in sequence_dict.items());
+
+# We get a map of encoding-to-word in sequence_dict
+
+# Generate encoded reviews
+reviews_encoded = [];
+for i, review in enumerate(review_cleans):
+    reviews_encoded.append([sequence_dict[x] for x in review]);
+
+
+# Plot a Histogram of length of reviews
+lengths = [len(x) for x in reviews_encoded];
+with plt.xkcd():
+    plt.hist(lengths, bins=range(100))
+
+
+
+
+# Truncate and Pad reviews at a Maximum cap of 60 words.
+max_cap = 60;
+X = pad_sequences(reviews_encoded, maxlen=max_cap, truncating='post')
+
+# Obtain a One-hot Y array for each review label.
+Y = np.array([[0,1] if '0' in label else [1,0] for label in labels])
+
+# Get a randomized sequence of positions to shuffle reviews
+np.random.seed(1024);
+random_posits = np.arange(len(X))
+np.random.shuffle(random_posits);
+
+# Shuffle X and Y
+X = X[random_posits];
+Y = Y[random_posits];
+
+# Divide the reviews into Training, Dev, and Test data.
+train_cap = int(0.85 * len(X));
+dev_cap = int(0.93 * len(X));
+
+X_train, Y_train = X[:train_cap], Y[:train_cap];
+X_dev, Y_dev = X[train_cap:dev_cap], Y[train_cap:dev_cap];
+X_test, Y_test = X[dev_cap:], Y[dev_cap:]
+
+
+
+model = Sequential();
+model.add(Embedding(len(word_dict)+1, max_cap, input_length=max_cap));
+model.add(LSTM(100, return_sequences=True));
+model.add(LSTM(100));
+model.add(Dense(100, activation='relu'));
+model.add(Dense(2, activation='softmax'));
+print(model.summary());
+
+optimizer = Adam(lr=0.001, decay=0.0001);
+model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
+# fit model
+model.fit(X_train, Y_train, batch_size=128, epochs=10, validation_data=(X_dev, Y_dev))
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #   
+=================================================================
+embedding_1 (Embedding)      (None, 60, 60)            36603780  
+_________________________________________________________________
+lstm_1 (LSTM)                (None, 60, 100)           64400     
+_________________________________________________________________
+lstm_2 (LSTM)                (None, 100)               80400     
+_________________________________________________________________
+dense_1 (Dense)              (None, 100)               10100     
+_________________________________________________________________
+dense_2 (Dense)              (None, 2)                 202       
+=================================================================
+Total params: 36,758,882
+Trainable params: 36,758,882
+Non-trainable params: 0
+_________________________________________________________________
+None
+Train on 127500 samples, validate on 12000 samples
+Epoch 1/10
+127500/127500 [==============================] - 915s 7ms/step - loss: 0.2906 - acc: 0.8784 - val_loss: 0.2477 - val_acc: 0.9001
+Epoch 2/10
+127500/127500 [==============================] - 863s 7ms/step - loss: 0.1208 - acc: 0.9553 - val_loss: 0.2738 - val_acc: 0.8898
+Epoch 3/10
+127500/127500 [==============================] - 867s 7ms/step - loss: 0.0462 - acc: 0.9837 - val_loss: 0.4388 - val_acc: 0.8808
+Epoch 4/10
+127500/127500 [==============================] - 4683s 37ms/step - loss: 0.0230 - acc: 0.9923 - val_loss: 0.5016 - val_acc: 0.8759
+Epoch 5/10
+127500/127500 [==============================] - 909s 7ms/step - loss: 0.0115 - acc: 0.9961 - val_loss: 0.5780 - val_acc: 0.8772
+Epoch 6/10
+127500/127500 [==============================] - 928s 7ms/step - loss: 0.0073 - acc: 0.9977 - val_loss: 0.7051 - val_acc: 0.8741
+Epoch 7/10
+127500/127500 [==============================] - 936s 7ms/step - loss: 0.0043 - acc: 0.9986 - val_loss: 0.8069 - val_acc: 0.8765
+Epoch 8/10
+127500/127500 [==============================] - 911s 7ms/step - loss: 0.0042 - acc: 0.9986 - val_loss: 0.5938 - val_acc: 0.8696
+Epoch 9/10
+127500/127500 [==============================] - 905s 7ms/step - loss: 0.0033 - acc: 0.9989 - val_loss: 0.6853 - val_acc: 0.8742
+Epoch 10/10
+127500/127500 [==============================] - 937s 7ms/step - loss: 0.0022 - acc: 0.9994 - val_loss: 0.8165 - val_acc: 0.8707
+Out[2]: <keras.callbacks.History at 0xb7f040b38>
+￼
+
+from sklearn.metrics import accuracy_score
+
+
+predictions = model.predict_classes(X_test)
+
+actuals = [0 if y[0] == 1 else 1 for y in Y_test];
+
+accuracy_score(predictions, actuals)
+Out[7]: 0.878
