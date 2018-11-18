@@ -28,7 +28,7 @@ num_pos = 0;
 num_neg = 0;
 num_total = 75000;
 
-with open('data/yelp_academic_dataset_review.json', 'r',encoding='utf8') as f:
+with open('/Users/edgarleung/Downloads/yelp_dataset/yelp_academic_dataset_review.json', 'r') as f:
     for line in f:
         if (len(lines) >= (num_total * 2)):
             break;
@@ -137,7 +137,7 @@ print(model.summary());
 optimizer = Adam(lr=0.001, decay=0.0001);
 model.compile(loss='binary_crossentropy', optimizer=optimizer, metrics=['accuracy'])
 # fit model
-model.fit(X_train, Y_train, batch_size=128, epochs=3, validation_data=(X_dev, Y_dev))
+model.fit(X_train, Y_train, batch_size=128, epochs=10, validation_data=(X_dev, Y_dev))
 
 
 
